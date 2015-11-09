@@ -1,0 +1,126 @@
+---
+title: "Practical Machine Learning"
+author: "Anthony"
+date: "November 9, 2015"
+output: html_document
+---
+
+##Summary
+
+I have decided to implement a random forest model that requires no cross-validation or a separate test set to get an unbiased estimate of the test set error since the data set given has many columns and there is a requirement to make a class prediction.All colums that has less than 60% of data filled are removed before doing the predictive model.The model accuracy over validation dataset is equal to 99.9235%. This model produced a good prediction results with our testing dataset and I used it to generate the 20th files to submit for the Assignments. 
+
+## Assignment requirements 
+This assignment instructions request to:
+1. predict the manner in which they did the exercise. This is the "classe" variable in the training set. All other variables can be use as predictor.
+2. Describe how I built my model, how I used cross validation, what I think the expected out of sample error is, and why I made the choices I did. 
+
+
+## Prepare the Environment
+Throughout this report you can always find the code that I used to generate my output presents here. When writing code chunks in the R markdown document, **always use echo = TRUE** so that someone else will be able to read the code. This assignment will be evaluated via peer assessment so <u>it's essential that my peer evaluators be able to review my code and my analysis together.</u>.  
+
+First, we set echo equal a **TRUE** and results equal a **'hold'** as global options for this document.  
+```{r setoptions}
+library(knitr)
+opts_chunk$set(echo = TRUE, results = 'hold')
+```
+
+### Load libraries and Set Seed
+
+Load all libraries used, and setting seed for reproducibility. *Results Hidden, Warnings FALSE and Messages FALSE*
+```{r library_calls, message=FALSE, warning=FALSE, results='hide'}
+
+library(ElemStatLearn)
+library(caret)
+library(rpart)
+library(randomForest)
+set.seed(250)
+```
+
+## Loading and Preprocessing of Data
+Remember to change the directory to where your data file resides in by using the setwd() command.
+
+```{r load_data}
+#read in training data
+pml_train <- read.csv("pml-training.csv", header=TRUE, sep=",", na.strings=c("NA",""))
+pml_train <- pml_train[,-1] # Remove the first column that represents a ID Row
+```
+### Data Sets Partitions Definitions
+Create the data partitions of training and validating data sets.
+```{r dataPartition}
+inTrain = createDataPartition(pml_train$classe, p=0.60, list=FALSE)
+training = pml_train[inTrain,]
+validating = pml_train[-inTrain,]
+```
+## Data Exploration and Cleaning
+
+We need to first check if there are columns without data first before applying it to random forest. If it's the case there is a need to remove all the columns that having less than 60% of data filled, and try to fill them with some center measure.
+```{r CkNA, echo=TRUE, results='asis'}
+sum((colSums(!is.na(training[,-ncol(training)])) < 0.6*nrow(training)))
+# Number of columns with less than 60% of data
+```
+So here I remove columns that have less than 60% of data, before applying to the model.
+
+```{r Keep}
+Keep <- c((colSums(!is.na(training[,-ncol(training)])) >= 0.6*nrow(training)))
+training   <-  training[,Keep]
+validating <- validating[,Keep]
+```
+## Modeling
+There is no need for cross validation when using random forest. It is estimated internally, during the execution. 
+```{r applyRandomForest}
+modelRF <- randomForest(classe~.,data=training)
+print(modelRF)
+```
+### Model Evaluation
+Here I evaluate the variable importance measures as produced by random Forest.
+```{r CheckVariableImportance}
+importance(modelRF)
+```
+Next  using confusion Matrix I evaluate the model results.
+```{r confMx}
+confusionMatrix(predict(modelRF,newdata=validating[,-ncol(validating)]),validating$classe)
+```
+Validate data set accurancy.
+```{r CAccur}
+accurancy<-c(as.numeric(predict(modelRF,newdata=validating[,-ncol(validating)])==validating$classe))
+accurancy<-sum(accurancy)*100/nrow(validating)
+```
+Model Accuracy as tested over Validation set = **`r accurancy`%**.  
+
+### Testing of Model
+Here I predict the new values with the testing csv provided, first apply the same data cleaning operations on it and coerce all columns of testing data set.  
+#### Load and process test Dataset
+```{r loadTestData}
+
+pml_test <- read.csv("pml-testing.csv", header=TRUE, sep=",", na.strings=c("NA",""))
+pml_test <- pml_test[,-1] # Remove the first column that represents a ID Row
+pml_test <- pml_test[,-ncol(pml_test)] # Remove the problem ID
+pml_test <- pml_test[,Keep] # Keep the same columns of testing dataset
+```
+#### Apply the Same Transformations and Coerce Testing Dataset
+```{r CoerceTestData}
+# Coerce testing dataset to same class and strucuture of training dataset 
+testing <- rbind(training[100, -59] , pml_test) 
+# Apply the ID Row to row.names and 100 for dummy row from testing dataset 
+row.names(testing) <- c(100, 1:20)
+
+```
+#### Prediction with test data
+```{r PredictingTestingResults}
+predictions <- predict(modelRF,newdata=testing[-1,])
+print(predictions)
+```
+
+#### Generating Answers Files to Submit for Assignment
+The following function to create the files to answers the Prediction Assignment Submission:
+```{r WriteResults}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(predictions)
+```
